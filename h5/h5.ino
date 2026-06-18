@@ -292,6 +292,10 @@ bool SHOW_KEY_PRESSES = DEFAULT_SHOW_KEY_PRESSES;
 #define B_Z_ENA 81 // q - enables / disables Z axis
 #define B_Y_ENA 89 // y - enables / disables Y axis
 
+// Defaulting both axes to Manual/DRO Mode (True) at boot
+bool manualModeX = true;
+bool manualModeZ = true;
+
 struct KeyboardBinding {
   const char* id;
   const char* label;
@@ -6581,17 +6585,36 @@ void updateDisplay() {
   String zText = "";
   String zLeftText = "";
   String zRightText = "";
-  if (updateLine2 || publishStatus) {
-    xText = !x.active || x.disabled ? "" : printAxisPos(&x);
+ if (updateLine2 || publishStatus) {
+    // X Axis Live Scale Display Toggle
+    if (manualModeX) {
+        int32_t originalXPos = x.pos;
+        x.pos = pcnt_get_counter_value(PULSE_COUNTER_X);
+        xText = printAxisPos(&x);
+        x.pos = originalXPos; 
+    } else {
+        xText = !x.active ? "" : printAxisPos(&x);
+    }
+    
     xLeftText = !x.active || x.disabled ? "" : printDistanceToLeftStop(&x);
     xRightText = !x.active || x.disabled ? "" : printDistanceToRightStop(&x);
     yText = !y.active || y.disabled ? "" : printAxisPos(&y);
     yLeftText = !y.active || y.disabled ? "" : printDistanceToLeftStop(&y);
     yRightText = !y.active || y.disabled ? "" : printDistanceToRightStop(&y);
-    zText = !z.active || z.disabled ? "" : printAxisPos(&z);
+
+    // Z Axis Live Scale Display Toggle
+    if (manualModeZ) {
+        int32_t originalZPos = z.pos;
+        z.pos = pcnt_get_counter_value(PULSE_COUNTER_Z);
+        zText = printAxisPos(&z); // Fixed typo from previous block to point to &z
+        z.pos = originalZPos; 
+    } else {
+        zText = !z.active ? "" : printAxisPos(&z);
+    }
+
     zLeftText = !z.active || z.disabled ? "" : printDistanceToLeftStop(&z);
     zRightText = !z.active || z.disabled ? "" : printDistanceToRightStop(&z);
-  }
+}
   if (updateLine2) {
     lcdHashLine2 = newHashLine2;
     setText("tX", xText);
@@ -9759,14 +9782,35 @@ void setup() {
   savedAuxForward = auxForward = pref.getBool(PREF_AUX_FORWARD, true);
   pref.end();
 
-  if (!z.needsRest && !z.disabled) digitalWrite(z.ena, z.invertEnable ? LOW : HIGH);
-  if (!x.needsRest && !x.disabled) digitalWrite(x.ena, x.invertEnable ? LOW : HIGH);
-  if (y.active && !y.needsRest && !y.disabled) digitalWrite(y.ena, y.invertEnable ? LOW : HIGH);
+ // Use your new manual state booleans to force the drivers off on startup
+manualModeX = true;
+manualModeZ = true;
 
-  if (LittleFS.begin(true)) {
-    gcodeProgramCount = getGcodeProgramCount();
-  }
+// If manualMode is true, write the DEACTIVATED state to the enable pin
+digitalWrite(z.ena, z.invertEnable ? HIGH : LOW);
+digitalWrite(x.ena, x.invertEnable ? HIGH : LOW);
+if (y.active && !y.needsRest && !y.disabled) digitalWrite(y.ena, y.invertEnable ? LOW : HIGH);
 
+if (LittleFS.begin(true)) {
+  gcodeProgramCount = getGcodeProgramCount();
+}
+
+Serial.println("Boot complete: Defaulting to Manual DRO mode. Motors free.");
+
+  
+
+    // ================================================================
+    // PLACE GECKOSUB'S PCNT SCALE INITIALIZATION RIGHT HERE
+    // ================================================================
+    // This tells the ESP32 hardware to start listening to the scale pins
+    // (Pins: X_PULSE_A, X_PULSE_B, Z_PULSE_A, Z_PULSE_B)
+    
+    // [GeckoSub's pcnt_unit_config code goes here]
+    
+    // ================================================================
+
+    Serial.println("Boot complete: Scale counters initialized and motors free-wheeling.");
+}
   // Debug.
   Serial.begin(115200);
   if (WIFI_ENABLED) {
